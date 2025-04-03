@@ -5,13 +5,15 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import ResultsTable from "@/components/results-table"
 import LoanCharts from "@/components/loan-charts"
+import ComparisonCharts from "@/components/comparison-charts"
 
 const formSchema = z.object({
   valor: z.coerce.number().positive("O valor deve ser positivo"),
@@ -21,40 +23,74 @@ const formSchema = z.object({
   parcela_alvo: z.coerce.number().int().positive("A parcela alvo deve ser positiva"),
   amortizacao_extra: z.coerce.number().min(0, "A amortização extra deve ser maior ou igual a zero"),
   tipo_amortizacao: z.string().default("SEM AMORTIZAÇÃO"),
+  sistema: z.enum(["SAC", "PRICE"]).default("SAC"),
 })
 
 type FormValues = z.infer<typeof formSchema>
 
 export default function Home() {
-  const [results, setResults] = useState<any[]>([])
+  const [resultsSAC, setResultsSAC] = useState<any[]>([])
+  const [resultsPRICE, setResultsPRICE] = useState<any[]>([])
+  const [activeSystem, setActiveSystem] = useState<"SAC" | "PRICE" | "COMPARISON">("SAC")
   const [isLoading, setIsLoading] = useState(false)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      valor: 200000,
-      num_parcelas: 360,
-      taxa_anual: 8.99,
-      tr: 0.5,
-      parcela_alvo: 0,
+      valor: 166078,
+      num_parcelas: 420,
+      taxa_anual: 5.64,
+      tr: 0.17,
+      parcela_alvo: 1200,
       amortizacao_extra: 0,
       tipo_amortizacao: "SEM AMORTIZAÇÃO",
+      sistema: "SAC",
     },
   })
 
   async function onSubmit(values: FormValues) {
     setIsLoading(true)
     try {
-      const response = await fetch("http://localhost:8000/calcular_sac", {
+      // Calcular SAC
+      const responseSAC = await fetch("http://localhost:8000/calcular_sac", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify({
+          ...values,
+          tipo_amortizacao: values.tipo_amortizacao,
+        }),
       })
 
-      const data = await response.json()
-      setResults(data.parcelas)
+      const dataSAC = await responseSAC.json()
+      setResultsSAC(dataSAC.parcelas)
+
+      // Calcular PRICE (assumindo que a API tem esse endpoint)
+      // Se a API não tiver esse endpoint, você precisará implementá-lo no backend
+      try {
+        const responsePRICE = await fetch("http://localhost:8000/calcular_price", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...values,
+            tipo_amortizacao: values.tipo_amortizacao,
+          }),
+        })
+
+        const dataPRICE = await responsePRICE.json()
+        setResultsPRICE(dataPRICE.parcelas)
+      } catch (error) {
+        console.error("Erro ao calcular PRICE (endpoint pode não existir):", error)
+        // Simulação de dados PRICE para demonstração
+        // Remova esta parte quando o endpoint estiver disponível
+        simulatePriceData(values)
+      }
+
+      // Definir o sistema ativo com base na seleção do usuário
+      setActiveSystem(values.sistema === "SAC" ? "SAC" : "PRICE")
     } catch (error) {
       console.error("Erro ao calcular:", error)
     } finally {
@@ -62,9 +98,60 @@ export default function Home() {
     }
   }
 
+  // Função para simular dados PRICE (remova quando o endpoint estiver disponível)
+  function simulatePriceData(values: FormValues) {
+    const valor = values.valor
+    const num_parcelas = values.num_parcelas
+    const taxa_anual = values.taxa_anual
+    const tr = values.tr / 100
+
+    // Cálculo da taxa mensal
+    const taxa_mensal = Math.pow(1 + taxa_anual / 100, 1 / 12) - 1
+
+    // Cálculo da parcela fixa (fórmula PRICE)
+    const parcela_fixa =
+      (valor * (taxa_mensal * Math.pow(1 + taxa_mensal, num_parcelas))) / (Math.pow(1 + taxa_mensal, num_parcelas) - 1)
+
+    // Simulação do seguro
+    const tx_seguro = (valor * 0.185) / num_parcelas + 25
+
+    let saldo_devedor = valor * (1 + tr)
+    const parcelas = []
+
+    for (let mes = 1; mes <= num_parcelas; mes++) {
+      const juros = saldo_devedor * taxa_mensal
+      const amortizacao = parcela_fixa - juros
+      const parcela_total = parcela_fixa + tx_seguro
+
+      parcelas.push({
+        Mês: mes,
+        "Saldo devedor": saldo_devedor,
+        Amortização: amortizacao,
+        Juros: juros,
+        Parcela: parcela_total,
+        "Amortização Ext.": values.amortizacao_extra,
+        "Tipo de Amortização": values.tipo_amortizacao,
+        "Parcelas restantes": num_parcelas - mes + 1,
+        "Prazo Final": num_parcelas - mes + 1,
+      })
+
+      saldo_devedor = (saldo_devedor - amortizacao) * (1 + tr)
+
+      // Ajuste para amortização extra
+      saldo_devedor = Math.max(0, saldo_devedor - values.amortizacao_extra)
+
+      // Se o saldo devedor for zero ou negativo, encerrar o loop
+      if (saldo_devedor <= 0) {
+        break
+      }
+    }
+
+    setResultsPRICE(parcelas)
+  }
+
   return (
     <main className="container mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold text-center mb-8">Calculadora de Financiamento SAC</h1>
+      <h1 className="text-3xl font-bold text-center mb-8">Calculadora de Financiamento</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <Card className="lg:col-span-1">
@@ -75,6 +162,42 @@ export default function Home() {
           <CardContent>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="sistema"
+                  render={({ field }) => (
+                    <FormItem className="space-y-3">
+                      <FormLabel>Sistema de Amortização</FormLabel>
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          className="flex space-x-4"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="SAC" id="sac" />
+                            <FormLabel htmlFor="sac" className="font-normal cursor-pointer">
+                              SAC
+                            </FormLabel>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="PRICE" id="price" />
+                            <FormLabel htmlFor="price" className="font-normal cursor-pointer">
+                              PRICE
+                            </FormLabel>
+                          </div>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormDescription>
+                        SAC: Amortização constante, parcelas decrescentes
+                        <br />
+                        PRICE: Parcelas fixas, amortização crescente
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="valor"
@@ -191,31 +314,101 @@ export default function Home() {
         </Card>
 
         <div className="lg:col-span-2">
-          {results.length > 0 && (
-            <Tabs defaultValue="charts">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="charts">Gráficos</TabsTrigger>
-                <TabsTrigger value="table">Tabela</TabsTrigger>
+          {(resultsSAC.length > 0 || resultsPRICE.length > 0) && (
+            <Tabs
+              defaultValue={activeSystem.toLowerCase()}
+              onValueChange={(value) => {
+                if (value === "comparison") {
+                  setActiveSystem("COMPARISON")
+                } else if (value === "sac") {
+                  setActiveSystem("SAC")
+                } else {
+                  setActiveSystem("PRICE")
+                }
+              }}
+            >
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="sac" disabled={resultsSAC.length === 0}>
+                  SAC
+                </TabsTrigger>
+                <TabsTrigger value="price" disabled={resultsPRICE.length === 0}>
+                  PRICE
+                </TabsTrigger>
+                <TabsTrigger value="comparison" disabled={resultsSAC.length === 0 || resultsPRICE.length === 0}>
+                  Comparativo
+                </TabsTrigger>
               </TabsList>
-              <TabsContent value="charts">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Visualização do Financiamento</CardTitle>
-                    <CardDescription>Gráficos de evolução do financiamento</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <LoanCharts data={results} />
-                  </CardContent>
-                </Card>
+
+              <TabsContent value="sac">
+                <Tabs defaultValue="charts">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="charts">Gráficos</TabsTrigger>
+                    <TabsTrigger value="table">Tabela</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="charts">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Visualização do Financiamento SAC</CardTitle>
+                        <CardDescription>Gráficos de evolução do financiamento</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <LoanCharts data={resultsSAC} />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                  <TabsContent value="table">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Tabela de Amortização SAC</CardTitle>
+                        <CardDescription>Detalhamento das parcelas do financiamento</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ResultsTable data={resultsSAC} />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
               </TabsContent>
-              <TabsContent value="table">
+
+              <TabsContent value="price">
+                <Tabs defaultValue="charts">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="charts">Gráficos</TabsTrigger>
+                    <TabsTrigger value="table">Tabela</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="charts">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Visualização do Financiamento PRICE</CardTitle>
+                        <CardDescription>Gráficos de evolução do financiamento</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <LoanCharts data={resultsPRICE} />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                  <TabsContent value="table">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Tabela de Amortização PRICE</CardTitle>
+                        <CardDescription>Detalhamento das parcelas do financiamento</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ResultsTable data={resultsPRICE} />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
+
+              <TabsContent value="comparison">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Tabela de Amortização</CardTitle>
-                    <CardDescription>Detalhamento das parcelas do financiamento</CardDescription>
+                    <CardTitle>Comparativo SAC vs PRICE</CardTitle>
+                    <CardDescription>Análise comparativa entre os sistemas de amortização</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <ResultsTable data={results} />
+                    <ComparisonCharts sacData={resultsSAC} priceData={resultsPRICE} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -226,4 +419,3 @@ export default function Home() {
     </main>
   )
 }
-
