@@ -267,21 +267,6 @@ export default function Home() {
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="amortizacao_extra"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amortização Extra (R$)</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
                 <FormField
                   control={form.control}
                   name="tipo_amortizacao"

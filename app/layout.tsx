@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'Calculadora Financiamento Imobiliário',
+  description: 'Calculadora de financiamento imobiliário com juros simples e compostos',
   generator: 'v0.dev',
 }
 
