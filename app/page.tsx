@@ -52,7 +52,7 @@ export default function Home() {
     setIsLoading(true)
     try {
       // Calcular SAC
-      const responseSAC = await fetch("http://localhost:8000/calcular_sac", {
+      const responseSAC = await fetch("http://apisimulacao.duckdns.org:8000/calcular_sac", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -69,7 +69,7 @@ export default function Home() {
       // Calcular PRICE (assumindo que a API tem esse endpoint)
       // Se a API não tiver esse endpoint, você precisará implementá-lo no backend
       try {
-        const responsePRICE = await fetch("http://localhost:8000/calcular_price", {
+        const responsePRICE = await fetch("http://apisimulacao.duckdns.org:8000/calcular_price", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
